@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.log
+.venv/
+.venv-setup/
+downloads/
+*.db
+*.db-wal
+*.db-shm
+.relay-data/
+.pytest_cache/

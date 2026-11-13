@@ -1,0 +1,63 @@
+name: fastq-collector
+
+services:
+  # 模拟测序仪器中转站：分段追加、单端延迟、可中断连接，支持 HTTP Range
+  relay:
+    build:
+      context: .
+      args:
+        APP_MODULE: relay.app:app
+    image: fastq-relay:latest
+    environment:
+      RELAY_DATA: /data/relay
+    ports:
+      - "8001:8000"
+    volumes:
+      - relay_data:/data/relay
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # 采集端：FastAPI + SQLite 增量采集、配对、进度查询与下载
+  collector:
+    build:
+      context: .
+      args:
+        APP_MODULE: collector.app:app
+    image: fastq-collector:latest
+    environment:
+      COLLECTOR_DB: /data/collector/collector.db
+      COLLECTOR_TIMEOUT: "15"
+    ports:
+      - "8000:8000"
+    volumes:
+      - collector_data:/data/collector
+    depends_on:
+      relay:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # 一次性端到端演示：自动建场景（含中断）、轮询采集、下载校验
+  demo:
+    image: fastq-collector:latest
+    environment:
+      RELAY_URL: http://relay:8000
+      COLLECTOR_URL: http://collector:8000
+      RUN_ID: demo
+    depends_on:
+      relay:
+        condition: service_healthy
+      collector:
+        condition: service_healthy
+    command: ["python", "scripts/demo.py"]
+    profiles: ["demo"]   # 默认不随 up 启动，需显式 --profile demo
+
+volumes:
+  relay_data:
+  collector_data:
